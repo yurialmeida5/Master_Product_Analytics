@@ -1,0 +1,349 @@
+---
+title: "Master Product Analytics"
+author: "Yuri Almeida Cunha"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r include=FALSE}
+
+# Pre-Setting configurations
+
+# Load necessary packages
+
+library(data.table)
+library(skimr)
+library(ggplot2)
+library(gganimate)
+library(ggiraph)
+library(scales)
+library(animation)
+library(tidyverse)
+library(ggrepel)
+#install.packages("tidytuesdayR")
+library(tidytuesdayR)
+library(lubridate)
+library(pander)
+
+# Clear Environment 
+rm(list = ls())
+
+
+# Define the graph theme custom function in order to standardize the graph analysis
+
+theme_wealth <- function(){
+  
+  theme_gray() + 
+    theme(plot.caption = element_text(hjust = 0, face = "italic"), 
+          plot.title = element_text(hjust = 0.5, color = "blue3", size = 16, face = "bold"),
+          plot.subtitle = element_text(hjust = 0.5, size = 12),
+          panel.grid.minor = element_blank()) 
+  
+}
+
+```
+
+
+# The project
+
+The following project was developed in order to fulfill the requirements of the subject Mastering Product Analytics at Central European University in Budapest. The goal of the analysis is to answer, based on a real data, the main questions related to the usage, control and viability of digital products.
+
+# The data
+
+```{r}
+
+# Load the necessary data for analysis
+
+registration <- data.table(read.csv('D:/CEU/Master_Product_Analytics/Master_Product_Analytics/Data/registrations.csv',
+                         header = TRUE, sep = ";"))
+
+activity <- data.table(read.csv('D:/CEU/Master_Product_Analytics/Master_Product_Analytics/Data/activity.csv',
+                                    header = TRUE, sep = ";"))
+
+
+```
+
+As mentioned above the data used is based on a real SaaS product subsampled. Two datasets were used in this project: the registration data and the activity data. The first one details the user registration to the application separated by user_id, region, operational system and month - and it has around 40k records. The second one, activity data, separates the user usage and its registration in the platform also by region, operational system and month - this dataset contains around 79k observations where one record represents an active user in a specific month. 
+
+# Analysis
+
+## Task1 - Acquisition
+
+### Plot the number of registrations in each month / Make some comments on the trends and any lower periods / Do you see any regional difference in registration trends? Which geography is likely to drive future growth in registrations?
+
+```{r message=FALSE, warning=FALSE , results='hide' , echo=TRUE}
+
+# Data preparation
+
+registration <- registration[ , `:=` (month_name = as.character(month(ymd(010101) + months(registration_month - 1),label= TRUE , abbr = TRUE)),
+                                      year = ifelse(as.numeric(registration_month) > 12, 'Year2', 'Year1'))]
+
+
+
+registration_t1 <- union(registration[, .(number_of_registrations = .N , region = 'World' ), by = .(year , month_name , registration_month)],
+                   registration[, .(number_of_registrations = .N ), by = .(year , month_name , registration_month, region)])
+
+
+registration_t1A <- data.table( growth_rate = ((registration_t1[year == 'Year2' & region == 'World', number_of_registrations]) / 
+                                              (registration_t1[year == 'Year1' & region == 'World' & registration_month < 10, number_of_registrations]) - 1),
+                                month_number = registration_t1[registration_month < 10 & year == 'Year1' & region == 'World', registration_month],
+                                month_abbr = registration_t1[registration_month < 10 & year == 'Year1' & region == 'World', month_name])
+
+
+registration_t1A$month_abbr <- factor(registration_t1A$month_abbr , levels = unique(registration_t1A$month_abbr))
+
+```
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+ggplot(registration_t1, aes(x = registration_month , y = number_of_registrations , color = region)) + 
+  geom_line() + geom_point() + 
+  transition_reveal(registration_month) + 
+  labs(title = 'Number of Registrations per Month and Region', 
+       subtitle = 'Saas application number of registrations split by month and region', 
+       caption = 'Data source: SaaS Product - Mastering Product Analytics',
+       y = 'Number of Registrations',
+       x = 'Year') +
+  scale_x_continuous(limits = c(1,21), breaks = seq(1,21, by = 1)) +
+  scale_y_continuous(breaks = seq(0,3000, by = 200)) +
+  theme_wealth() +
+  theme(legend.position = "top" , legend.title = element_blank())
+
+
+```
+
+On the graph above, it's possible to visualize the number of user registrations detailed by month and region. Based on the global and region lines, it can be deducted that this application registration follows to specific seasonality trends along the year - one small peak (from February to May) and another bigger one from July to November) with a great reduction during December. 
+Another important aspect to highlight concerns the regional aspects of the registration process. The ROW region leads the number of registrations during those following 21 months, while America and EMEA present almost equal numbers,and it's the one that presents the biggest possibility of growth due to the steepness of the line, specially related to the great peak seen from July to November.
+
+### Calculate year-over-year growth of registrations (i.e.percentage increase or decline of Month 13 over Month 1). What would you project for Month 22? 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+ggplot(registration_t1A, aes(x = month_abbr, y = growth_rate)) +
+  geom_bar(stat = 'identity') + 
+  labs(title = 'Monthly Registration Growth Rate', 
+       subtitle = 'Registration Growth Rate by Month between Year 1 and Year 2', 
+       caption = 'Data source: SaaS Product - Mastering Product Analytics',
+       y = 'Growth Rate Year2 / Year1 (%)',
+       x = 'Month') +
+  theme_wealth() +
+  theme(legend.position = "none" , axis.text.x = element_text(angle = 90, hjust = 1)) 
+
+```
+
+Considering the graph above and the total number of registrations presented before, it's possible to expected nothing different than a small growth (or maximum a small reduction) in the registration numbers compared to the past year for the month 22. The year growth rate showed extremely positive results from Jan to Jul. And although there was a decrease under Aug and Sep on the year comparison growth rates, there is a highly possible registration growth trend for next upcoming months related to the seasonality effect mentioned on the beginning of the analysis.
+
+## Task2 - Activity
+
+```{r message=FALSE, warning=FALSE , results='hide' , echo=TRUE}
+
+# Data Preparation
+
+
+activity_t2 <- activity[ , `:=` (month_name = as.character(month(ymd(010101) + months(registration_month - 1),label= TRUE , abbr = TRUE)),
+                                 year = ifelse(as.numeric(registration_month) > 12, 'Year2', 'Year1'),
+                                 row_id = seq.int(nrow(activity)))]
+
+activity_t2 <- setnames(activity_t2,'id','user_id')
+
+# Create user category: New, Retained, Resurrected
+
+activity_t2$user_cat <- NA                
+
+for (i in activity$row_id) {
+  
+    current_month <- activity_t2$activity_month[i]
+    registration_month <- activity_t2$registration_month[i]
+    
+    if(current_month > registration_month){
+      
+      ifelse(is.element(activity_t2$user_id[i], activity_t2[activity_month == current_month - 1, user_id]) == TRUE, 
+             activity_t2$user_cat[i] <- "Retained",
+             activity_t2$user_cat[i] <- "Resurrected")
+      
+    } else {
+      
+      activity_t2$user_cat[i] <- "New"
+      
+    }
+    
+}
+ 
+activity_t2A <- union(activity_t2[, .(n_of_active_users = .N , region = 'World' ), by = .(year , month_name , registration_month)],
+                         activity_t2[, .(n_of_active_users = .N ), by = .(year , month_name , registration_month, region)])
+
+activity_t2B <- activity_t2[ , .(n_of_active_users = .N ), by = .(year , activity_month, user_cat )][order(year)]
+
+```
+
+
+### Plot the number of active users in each month / Make some comments on the trends and any lower periods
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+ggplot(activity_t2A, aes(x = registration_month , y = n_of_active_users , color = region)) + 
+  geom_line() + geom_point() + 
+  transition_reveal(registration_month) + 
+  labs(title = 'Number of active users per Month and Region', 
+       subtitle = 'Saas application percentage of active users by month and region', 
+       caption = 'Data source: SaaS Product - Mastering Product Analytics',
+       y = 'Number of active users',
+       x = 'Year') +
+  scale_x_continuous(limits = c(1,21), breaks = seq(1,21, by = 1)) +
+  scale_y_continuous(breaks = seq(0,6000, by = 500)) +
+  theme_wealth() +
+  theme(legend.position = "top" , legend.title = element_blank())
+
+```
+
+Taking a quick look on the graph above, the same patterns for the user registration can be also highlighted for the user log activity. During the period from Feb to May there is a small peak in terms of usage followed by a huge access fall that will only be "recovered" on the great peak observed from July to November. This seasonality aspect reveals to be really important for this product analysis, however it's important to keep track of the usage log to confirm if the growth in terms of user access will unfold as expected after Sep. 
+
+### Plot the percentage of America among active users in each month
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+ggplot(activity_t2A[region != 'World'], aes(x = registration_month , y = n_of_active_users , fill = region)) +
+  geom_bar(stat = 'identity' , position = 'fill') +
+  labs(title = 'Number of active users per Month and Region', 
+       subtitle = 'Saas application number of active users split by month and region', 
+       caption = 'Data source: SaaS Product - Mastering Product Analytics',
+       y = 'Number of active users (%)',
+       x = 'Month') + 
+  #scale_x_continuous(limits = c(1,21), breaks = seq(1,21, by = 1)) +
+  scale_y_continuous(breaks = seq(0,1, by = 0.1) , labels = percent) + 
+  theme_wealth() +
+  theme(legend.position = "top" , legend.title = element_blank())
+
+
+```
+
+Besides the relativity higher percentage in the number of active users in the Month 1 (around 35%), the region America represents a pretty much stable participation in the number of access per region during those 21 months. The numbers are usually close to 20%, and don't show any significant growth or reduction.
+
+### Classify each active user as New (registered in that month), Retained (was active the previous month as well), and Resurrected (was inactive the previous month and not New). Plot the number of Retained active users in each month.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+gh_t2b <- ggplot(activity_t2B, aes(x = activity_month, y = n_of_active_users )) +
+  geom_bar(stat = 'identity') +
+  theme_wealth() +
+  transition_states(user_cat) +
+  labs(title = 'Number of users by category and month', 
+       subtitle = 'User Category: {closest_state}',
+       y = 'Number of users') +
+  theme(legend.position = "top" , legend.title = element_blank())
+
+animate(gh_t2b, end_pause = 20, fps = 2)
+
+```
+
+
+The number of retained users considers basically the users that were active under the past month. The seasonality observed under the past analysis can also be seen in this graph. The biggest numbers of the users being retained are coincident with the periods where it was observed the peaks of registrations and user activity logs. In addition, due to this graph interactivity, it's possible to visualize that the number of users resurrected (was inactive the previous month and not new) and the new user registrations are following some growth trend pattern, what is really positive for the digital product life.
+
+## Task3 - Retention
+
+```{r message=FALSE, warning=FALSE , results='hide' , echo=TRUE}
+
+# Data preparation 
+
+
+
+Retained <- activity_t2[activity_month == 2 & user_cat == 'Retained', .(n_of_active_users = .N ), by = .(year , activity_month, user_cat )]
+Retained <- Retained$n_of_active_users
+
+Total <- activity_t2[activity_month == 2, .(n_of_active_users = .N ), by = .(year , activity_month)]
+Total <- Total$n_of_active_users
+
+Retain_Perc_1to2 <- percent(Retained / Total)
+
+Retained <- activity_t2[activity_month == 14 & user_cat == 'Retained' & registration_month == 13, .(n_of_active_users = .N ), by = .(year , activity_month, user_cat )]
+Retained <- Retained$n_of_active_users
+
+Total <- activity_t2[activity_month == 14 & registration_month == 13, .(n_of_active_users = .N ), by = .(year , activity_month)]
+Total <- Total$n_of_active_users
+
+Retain_Perc_13to14 <- percent(Retained / Total)
+
+dt <- data.table(Retention_M1toM2 = Retain_Perc_1to2 , Retention_M13toM14 = Retain_Perc_13to14 )
+
+#t3A
+
+
+activity_t3 <- activity_t2[ , .(n_of_active_users = .N ), by = .(year , activity_month, user_cat )][order(year)]
+activity_t2$first_month_user <- ifelse(activity_t2$registration_month == 1, 'Yes', 'No')
+activity_t3A <- activity_t2[ , .(n_of_active_users = .N ), by = .(year , activity_month, first_month_user )][order(year)]
+
+#t3B
+
+activity_t3B <- activity_t2[ activity_month == 2 & user_cat == 'Retained' , .(n_of_active_users = .N ), by = .(year , activity_month, user_cat, operating_system)][order(year)]
+
+```
+
+### Compare the Month 1 to Month 2 retention rate among users with different operating systems. Do you see any difference?
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+ggplot(activity_t3B, aes(x = operating_system , y = n_of_active_users , fill =  operating_system )) +
+  geom_bar(stat = 'identity') +
+  theme_wealth() +
+  labs(title = 'Number of users retained from Month 1 to Month 2', 
+       subtitle = 'N_Users_Retained Month1 / Month 2 by operational system',
+       y = 'Number of users') +
+  theme(legend.position = "top" , legend.title = element_blank())
+
+```
+
+Yes, there is a difference in terms of retention rates based on the user operational system. There is a substantial difference in the number of retained users that use Windows than the other operational systems like Linux or Mac. The rates of retention are easily 3x higher than the Mac users and more than 20x higher than the Linux ones.
+
+### Calculate what percentage of Month 1 registered users have been active in Month 2 (second month retention rate). Calculate the same rate for users who registered in Month 13 (What percentage of them have been active in Month 14?) What can explain the difference?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+pander(dt)
+
+```
+
+According to the table above, the retention rates noticed from users registered in Month 1 and active in month 2 and users registered in 12 and active in month 13 are significantly different (28% to 93%). Unless you develop an specific study about those rates, it's impossible to define with 100% precision what is the real explanations related to that growth, however some ideas can come up when we talk about this topic, like campaigns, application changes on its user interface, higher number of users in the database, etc.
+
+### Plot the second month retention rate over time (from Month 1 to Month 20). Do you see a big change somewhere?
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+ggplot(activity_t3A, aes(x = activity_month , y = n_of_active_users , fill = first_month_user)) +
+  geom_bar(stat = 'identity' , position = 'fill') +
+  labs(title = 'Number of active users registered in the first month', 
+       subtitle = 'Saas application number of active users registered in the first month ', 
+       caption = 'Data source: SaaS Product - Mastering Product Analytics',
+       y = 'Number of users (%)',
+       x = 'Month') + 
+  #scale_x_continuous(limits = c(1,21), breaks = seq(1,21, by = 1)) +
+  scale_y_continuous(breaks = seq(0,1, by = 0.1) , labels = percent) + 
+  theme_wealth() +
+  theme(legend.position = "top" , legend.title = element_blank())
+
+ggplot(activity_t3, aes(x = activity_month , y = n_of_active_users , fill = user_cat)) +
+  geom_bar(stat = 'identity' , position = 'fill') +
+  labs(title = 'Number of active users per month and category', 
+       subtitle = 'Saas application number of active users split by month and category', 
+       caption = 'Data source: SaaS Product - Mastering Product Analytics',
+       y = 'Number of users (%)',
+       x = 'Month') + 
+  #scale_x_continuous(limits = c(1,21), breaks = seq(1,21, by = 1)) +
+  scale_y_continuous(breaks = seq(0,1, by = 0.1) , labels = percent) + 
+  theme_wealth() +
+  theme(legend.position = "top" , legend.title = element_blank())
+
+```
+
+(I confess that I didn't understand properly the question. So, I have done 2 analysis. The first one shows the retention of the users registered in the first month. The second graph follows the categorization applied for all the months where the retained users are only considered if they were active in the month before. As expected, the first one really follows a right skewed long tailed distribution where just a few users registered in the first month actually kept using the tool for that long. The second graph instead shows a more normalized distribution of retained and resurrected users.)
+
+# Conclusion 
+
+Product analytics is a robust set of tools that allow product managers and product teams to assess the performance of the digital experiences they build. This area provides critical information to optimize performance, diagnose problems, and correlate customer activity with long-term value. There a lot of possible measures and analysis that can be applied, however keeping track of your users registration process and activity log can really generate great insights for the success of your digital product life cycle.  
